@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pro Player</title>
+  <style>
+    :root {
+      --bg: #0e0e10;
+      --panel: #17171b;
+      --text: #ffffff;
+      --muted: #9aa0a6;
+      --accent: #e11d48; /* crimson */
+      --accent-2: #22c55e;
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 80% 10%, #1f1f25 0%, var(--bg) 60%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .stage {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .cta {
+      display: grid;
+      gap: 16px;
+      text-align: center;
+      max-width: 560px;
+      width: 100%;
+      padding: 24px;
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+
+    .cta h1 { margin: 0; font-size: clamp(22px, 4vw, 32px); }
+    .cta p { margin: 0; color: var(--muted); line-height: 1.5; }
+
+    .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .btn {
+      appearance: none; border: 0; cursor: pointer; color: white;
+      background: var(--accent);
+      padding: 12px 18px; border-radius: 999px; font-weight: 600; font-size: 16px;
+      transition: transform .12s ease, filter .2s ease, background .2s ease;
+    }
+    .btn.secondary { background: #2a2a31; color: #e5e7eb; }
+    .btn:active { transform: translateY(1px) scale(0.98); }
+
+    input[type="file"] { display: none; }
+    label.btn { display: inline-flex; align-items: center; gap: 8px; }
+
+    /* Slide-up player panel */
+    .player {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: var(--panel);
+      border-top-left-radius: var(--radius);
+      border-top-right-radius: var(--radius);
+      box-shadow: 0 -10px 30px rgba(0,0,0,.55);
+      transform: translateY(100%);
+      transition: transform .5s cubic-bezier(.2,.8,.2,1);
+      will-change: transform;
+      overflow: hidden;
+    }
+    .player.active { transform: translateY(0); }
+
+    .player-inner {
+      display: grid;
+      grid-template-columns: 1fr; 
+      gap: 14px;
+      padding: 14px 16px 16px;
+    }
+
+    .track-meta { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+    .cover {
+      width: 48px; height: 48px; border-radius: 10px; flex: 0 0 auto;
+      background: linear-gradient(135deg, #26262b, #1b1b20);
+      display: grid; place-items: center; font-weight: 700; color: #d1d5db;
+    }
+    .titles { display: grid; gap: 2px; min-width: 0; }
+    .title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .artist { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .canvas-wrap {
+      position: relative; width: 100%; height: 120px; border-radius: 12px; overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+
+    .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+    .transport { display: flex; gap: 8px; align-items: center; }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 999px; border: 0; cursor: pointer; color: white;
+      background: #2a2a31; font-size: 16px; font-weight: 700;
+    }
+    .icon-btn.primary { background: var(--accent); }
+
+    .time { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); text-align: right; }
+
+    .range { appearance: none; width: 100%; height: 6px; border-radius: 999px; background: #2a2a31; outline: none; }
+    .range::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); }
+    .range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 0; }
+
+    .bar-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+    .vol { display: flex; align-items: center; gap: 8px; }
+
+    .playlist {
+      display: grid; gap: 8px; max-height: 38vh; overflow: auto; padding-bottom: 8px;
+      border-top: 1px dashed rgba(255,255,255,.08); margin-top: 4px; padding-top: 8px;
+    }
+    .track {
+      display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: center;
+      padding: 8px 10px; border-radius: 10px; cursor: pointer;
+    }
+    .track:hover { background: rgba(255,255,255,0.04); }
+    .track.active { background: rgba(225,29,72,0.15); }
+
+    /* Larger screens */
+    @media (min-width: 780px) {
+      .player-inner { grid-template-columns: 280px 1fr; align-items: center; }
+      .canvas-wrap { height: 160px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="cta" id="intro">
+      <h1>🎧 Pro Player </h1>
+      <p> Приятного прослушивания!</p>
+      <div class="row">
+        <button class="btn" id="playDemo">▶ Играть демо</button>
+        <label class="btn secondary" for="filePicker">＋ Добавить треки</label>
+        <input id="filePicker" type="file" accept="audio/*" multiple />
+      </div>
+      <p style="font-size:13px"></p>
+    </div>
+  </div>
+
+  <!-- Slide-up Player -->
+  <section class="player" id="player">
+    <div class="player-inner">
+      <div>
+        <div class="track-meta">
+          <div class="cover" id="cover">♪</div>
+          <div class="titles">
+            <div class="title" id="title">Нет трека</div>
+            <div class="artist" id="artist">Добавь файл(ы)</div>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="viz"></canvas>
+        </div>
+      </div>
+
+      <div>
+        <div class="controls">
+          <div class="transport">
+            <button class="icon-btn" id="prevBtn" title="Предыдущий">⏮</button>
+            <button class="icon-btn primary" id="playBtn" title="Играть/Пауза">▶</button>
+            <button class="icon-btn" id="nextBtn" title="Следующий">⏭</button>
+          </div>
+          <input class="range" id="seek" type="range" min="0" max="1000" value="0" />
+          <div class="time"><span id="tcur">0:00</span> / <span id="tdur">0:00</span></div>
+        </div>
+        <div class="bar-row">
+          <div class="vol">
+            <span style="font-size:14px">🔊</span>
+            <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="0.9" />
+          </div>
+          <label class="btn secondary" for="filePicker2">＋ Треки</label>
+          <input id="filePicker2" type="file" accept="audio/*" multiple />
+        </div>
+        <div class="playlist" id="playlist"></div>
+      </div>
+    </div>
+  </section>
+
+  <audio id="audio" preload="metadata" src="music.mp3"></audio>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const qs = (sel, root=document) => root.querySelector(sel);
+
+    const audio = el('audio');
+    const player = el('player');
+    const playBtn = el('playBtn');
+    const prevBtn = el('prevBtn');
+    const nextBtn = el('nextBtn');
+    const seek = el('seek');
+    const tcur = el('tcur');
+    const tdur = el('tdur');
+    const vol = el('volume');
+    const title = el('title');
+    const artist = el('artist');
+    const cover = el('cover');
+    const playlistEl = el('playlist');
+    const intro = el('intro');
+    const viz = el('viz');
+
+    const ctx2d = viz.getContext('2d');
+    let dpr = Math.max(1, window.devicePixelRatio || 1);
+    function resizeCanvas(){
+      const rect = viz.getBoundingClientRect();
+      viz.width = Math.floor(rect.width * dpr);
+      viz.height = Math.floor(rect.height * dpr);
+    }
+    resizeCanvas();
+    addEventListener('resize', resizeCanvas);
+
+    let AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let ac, sourceNode, analyser, dataArray, rafId;
+
+    // Playlist state
+    const state = {
+      list: [], // {name, url, file}
+      index: -1,
+      playing: false
+    };
+
+    function formatTime(sec){
+      if (!isFinite(sec)) return '0:00';
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function setMeta(name){
+      title.textContent = name || 'Без имени';
+      artist.textContent = 'Локальный файл';
+      cover.textContent = (name || '♪').slice(0,1).toUpperCase();
+    }
+
+    function renderPlaylist(){
+      playlistEl.innerHTML = '';
+      state.list.forEach((t, i)=>{
+        const item = document.createElement('div');
+        item.className = 'track' + (i === state.index ? ' active' : '');
+        item.innerHTML = `<div style="text-align:center">${i+1}</div><div class="ellipsis">${t.name}</div><div style="font-size:12px;color:var(--muted)">${t.file ? 'local' : 'demo'}</div>`;
+        item.addEventListener('click', ()=>{ loadIndex(i,true); });
+        playlistEl.appendChild(item);
+      });
+    }
+
+    function ensureAudioGraph(){
+      if (!ac) ac = new AudioCtx();
+      if (!sourceNode){
+        sourceNode = ac.createMediaElementSource(audio);
+        analyser = ac.createAnalyser();
+        analyser.fftSize = 1024; // 512 bars (actually half usable)
+        analyser.smoothingTimeConstant = 0.85;
+        sourceNode.connect(analyser);
+        analyser.connect(ac.destination);
+        const bufferLen = analyser.frequencyBinCount; // 512
+        dataArray = new Uint8Array(bufferLen);
+      }
+    }
+
+    function draw(){
+      if (!analyser) return;
+      analyser.getByteFrequencyData(dataArray);
+      ctx2d.clearRect(0,0,viz.width,viz.height);
+
+      const W = viz.width, H = viz.height;
+      const n = 64; // number of bars drawn (subset of bins)
+      const step = Math.floor(dataArray.length / n);
+      const barW = W / n;
+      for (let i=0;i<n;i++){
+        const v = dataArray[i*step] / 255; // 0..1
+        // ease curve for visual punch
+        const eased = Math.pow(v, 0.8);
+        const h = eased * (H*0.9);
+        const x = i * barW;
+        const y = H - h;
+        // gradient per frame
+        const grad = ctx2d.createLinearGradient(0, y, 0, H);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(1, 'rgba(255,255,255,0.15)');
+        ctx2d.fillStyle = grad;
+        const r = 4 * dpr;
+        roundRect(ctx2d, x + barW*0.15, y, barW*0.7, h, r);
+        ctx2d.fill();
+      }
+      rafId = requestAnimationFrame(draw);
+    }
+
+    function roundRect(ctx, x, y, w, h, r){
+      if (w < 2*r) r = w/2; if (h < 2*r) r = h/2;
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.arcTo(x+w, y, x+w, y+h, r);
+      ctx.arcTo(x+w, y+h, x, y+h, r);
+      ctx.arcTo(x, y+h, x, y, r);
+      ctx.arcTo(x, y, x+w, y, r);
+      ctx.closePath();
+    }
+
+    function startViz(){ cancelAnimationFrame(rafId); draw(); }
+    function stopViz(){ cancelAnimationFrame(rafId); }
+
+    async function play(){
+      try {
+        ensureAudioGraph();
+        if (ac.state === 'suspended') await ac.resume();
+        await audio.play();
+        state.playing = true;
+        playBtn.textContent = '⏸';
+        player.classList.add('active');
+        intro?.classList?.add('hidden');
+        startViz();
+      } catch (e){
+        console.warn('Play blocked:', e);
+      }
+    }
+
+    function pause(){
+      audio.pause();
+      state.playing = false;
+      playBtn.textContent = '▶';
+      stopViz();
+    }
+
+    function toggle(){ state.playing ? pause() : play(); }
+
+    function loadIndex(i, autoplay=false){
+      if (i < 0 || i >= state.list.length) return;
+      state.index = i;
+      const tr = state.list[i];
+      audio.src = tr.url;
+      setMeta(tr.name);
+      renderPlaylist();
+      if (autoplay) play();
+    }
+
+    function next(){
+      if (!state.list.length) return;
+      const i = (state.index + 1) % state.list.length;
+      loadIndex(i, true);
+    }
+    function prev(){
+      if (!state.list.length) return;
+      const i = (state.index - 1 + state.list.length) % state.list.length;
+      loadIndex(i, true);
+    }
+
+    // Seek & time
+    audio.addEventListener('timeupdate', ()=>{
+      if (!isFinite(audio.duration)) return;
+      seek.value = Math.floor((audio.currentTime / audio.duration) * 1000) || 0;
+      tcur.textContent = formatTime(audio.currentTime);
+      tdur.textContent = formatTime(audio.duration);
+    });
+    seek.addEventListener('input', ()=>{
+      if (!isFinite(audio.duration)) return;
+      audio.currentTime = (seek.value/1000) * audio.duration;
+    });
+
+    // Volume
+    vol.addEventListener('input', ()=>{ audio.volume = +vol.value; });
+    audio.volume = +vol.value;
+
+    // Controls
+    playBtn.addEventListener('click', toggle);
+    prevBtn.addEventListener('click', prev);
+    nextBtn.addEventListener('click', next);
+
+    // File pickers
+    function addFiles(fileList){
+      const files = Array.from(fileList || []);
+      files.forEach(file => {
+        const url = URL.createObjectURL(file);
+        state.list.push({ name: file.name.replace(/\.[^/.]+$/,'') , url, file });
+      });
+      if (files.length){
+        if (state.index === -1) loadIndex(0, false); // set first
+        renderPlaylist();
+      }
+    }
+    el('filePicker').addEventListener('change', e=> addFiles(e.target.files));
+    el('filePicker2').addEventListener('change', e=> addFiles(e.target.files));
+
+    // Demo button tries to load built-in music.mp3 (if present)
+    el('playDemo').addEventListener('click', ()=>{
+      // If user already has a list, just play current
+      if (state.list.length){ play(); return; }
+      // Add demo entry pointing to audio.src (music.mp3 by default)
+      const name = (audio.src.split('/').pop() || 'music').replace(/\.[^/.]+$/,'');
+      state.list.push({ name, url: audio.src });
+      loadIndex(0, true);
+    });
+
+    // Autoplay reveal on manual play
+    audio.addEventListener('play', ()=>{ player.classList.add('active'); startViz(); playBtn.textContent='⏸'; state.playing=true; });
+    audio.addEventListener('pause', ()=>{ stopViz(); playBtn.textContent='▶'; state.playing=false; });
+    audio.addEventListener('ended', next);
+
+    // Allow swipe down to close panel on mobile (visual only)
+    let touchY=null, startY=null;
+    player.addEventListener('touchstart', (e)=>{ startY = e.touches[0].clientY; touchY = startY; }, {passive:true});
+    player.addEventListener('touchmove', (e)=>{ touchY = e.touches[0].clientY; }, {passive:true});
+    player.addEventListener('touchend', ()=>{
+      if (startY!=null && touchY!=null && touchY - startY > 120){ pause(); /* keep panel open but paused */ }
+      startY = touchY = null;
+    });
+
+    // Keyboard shortcuts
+    addEventListener('keydown', (e)=>{
+      if (['Space','KeyK'].includes(e.code)) { e.preventDefault(); toggle(); }
+      if (e.code === 'ArrowRight') audio.currentTime += 5;
+      if (e.code === 'ArrowLeft') audio.currentTime -= 5;
+    });
+  </script>
+</body>
+</html>

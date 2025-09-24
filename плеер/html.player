@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro Player</title>
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0e0e10;
+  color: white;
+}
+.player {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  background: #17171b;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  transform: translateY(100%);
+  transition: transform 0.5s ease;
+}
+.player.active { transform: translateY(0); }
+canvas { width: 100%; height: 100px; display: block; }
+.controls {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+}
+.controls button {
+  background: #e11d48;
+  border: none;
+  padding: 10px;
+  border-radius: 50%;
+  margin-right: 10px;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+}
+input[type=range] {
+  flex: 1;
+}
+.playlist {
+  max-height: 200px;
+  overflow: auto;
+  padding: 10px;
+}
+.track {
+  padding: 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.track.active { background: rgba(225,29,72,0.2); }
+</style>
+</head>
+<body>
+
+<div id="intro" style="text-align:center; padding:20px;">
+  <h1>🎧 Pro Player</h1>
+  <p>Выбери треки и наслаждайся музыкой с визуализацией</p>
+  <label>
+    <input type="file" id="filePicker" accept="audio/*" multiple style="display:none">
+    <button style="padding:10px 20px;">＋ Добавить треки</button>
+  </label>
+</div>
+
+<section class="player" id="player">
+  <canvas id="viz"></canvas>
+  <div class="controls">
+    <button id="prevBtn">⏮</button>
+    <button id="playBtn">▶</button>
+    <button id="nextBtn">⏭</button>
+    <input type="range" id="seek" min="0" max="1000" value="0">
+  </div>
+  <div class="playlist" id="playlist"></div>
+</section>
+
+<audio id="audio" preload="metadata"></audio>
+
+<script>
+const audio = document.getElementById('audio');
+const player = document.getElementById('player');
+const playBtn = document.getElementById('playBtn');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const seek = document.getElementById('seek');
+const playlistEl = document.getElementById('playlist');
+const viz = document.getElementById('viz');
+const ctx2d = viz.getContext('2d');
+
+let ac, analyser, dataArray, rafId;
+let playlist = [];
+let currentIndex = -1;
+
+document.getElementById('filePicker').addEventListener('change', e=>{
+  const files = Array.from(e.target.files);
+  files.forEach(f=>{
+    const url = URL.createObjectURL(f);
+    playlist.push({ name: f.name, url });
+  });
+  if (playlist.length && currentIndex === -1) {
+    loadTrack(0);
+  }
+  renderPlaylist();
+});
+
+function renderPlaylist(){
+  playlistEl.innerHTML = '';
+  playlist.forEach((track,i)=>{
+    const div = document.createElement('div');
+    div.textContent = track.name;
+    div.className = 'track' + (i===currentIndex?' active':'');
+    div.addEventListener('click', ()=>loadTrack(i,true));
+    playlistEl.appendChild(div);
+  });
+}
+
+function loadTrack(index, autoplay=false){
+  currentIndex = index;
+  audio.src = playlist[index].url;
+  renderPlaylist();
+  if (autoplay) play();
+}
+
+function play(){
+  ensureAudioGraph();
+  audio.play();
+  playBtn.textContent = '⏸';
+  player.classList.add('active');
+  startViz();
+}
+
+function pause(){
+  audio.pause();
+  playBtn.textContent = '▶';
+  cancelAnimationFrame(rafId);
+}
+
+function toggle(){
+  if (audio.paused) play(); else pause();
+}
+
+function next(){
+  if (!playlist.length) return;
+  loadTrack((currentIndex+1)%playlist.length, true);
+}
+
+function prev(){
+  if (!playlist.length) return;
+  loadTrack((currentIndex-1+playlist.length)%playlist.length, true);
+}
+
+function ensureAudioGraph(){
+  if (!ac) {
+    ac = new AudioContext();
+    const src = ac.createMediaElementSource(audio);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    analyser.connect(ac.destination);
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+  }
+}
+
+function startViz(){
+  analyser.getByteFrequencyData(dataArray);
+  ctx2d.clearRect(0,0,viz.width,viz.height);
+  let W = viz.width, H = viz.height;
+  let n = dataArray.length;
+  let barW = W/n;
+  for (let i=0; i<n; i++){
+    let v = dataArray[i]/255;
+    let h = v*H;
+    ctx2d.fillStyle = '#e11d48';
+    ctx2d.fillRect(i*barW, H-h, barW-2, h);
+  }
+  rafId = requestAnimationFrame(startViz);
+}
+
+audio.addEventListener('timeupdate', ()=>{
+  seek.value = (audio.currentTime / audio.duration) * 1000 || 0;
+});
+seek.addEventListener('input', ()=>{
+  audio.currentTime = (seek.value/1000) * audio.duration;
+});
+
+playBtn.addEventListener('click', toggle);
+prevBtn.addEventListener('click', prev);
+nextBtn.addEventListener('click', next);
+</script>
+</body>
+</html>
